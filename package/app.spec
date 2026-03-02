@@ -6,12 +6,24 @@ PyInstaller spec file for AI 学术写作助手
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import (
+    collect_submodules,
+    collect_data_files,
+    collect_all
+)
 
 # 获取 spec 文件所在目录
 spec_dir = os.path.dirname(os.path.abspath(SPEC))
 
-# 收集所需的隐式导入
+# -------------------------
+# 关键修复：收集 jaraco & pkg_resources
+# -------------------------
+datas_jaraco, binaries_jaraco, hidden_jaraco = collect_all("jaraco")
+datas_pkg, binaries_pkg, hidden_pkg = collect_all("pkg_resources")
+
+# -------------------------
+# 原有 hidden imports
+# -------------------------
 hidden_imports = [
     'uvicorn.logging',
     'uvicorn.loops',
@@ -37,7 +49,6 @@ hidden_imports = [
     'sse_starlette',
     'redis',
     'dotenv',
-    # Word 格式化模块依赖
     'mistune',
     'docx',
     'lxml',
@@ -45,29 +56,31 @@ hidden_imports = [
     'lxml._elementpath',
 ]
 
-# 收集 uvicorn 和其他依赖的子模块
+# 收集子模块
 hidden_imports += collect_submodules('uvicorn')
 hidden_imports += collect_submodules('sqlalchemy')
 hidden_imports += collect_submodules('pydantic')
 hidden_imports += collect_submodules('pydantic_settings')
 hidden_imports += collect_submodules('fastapi')
 hidden_imports += collect_submodules('starlette')
-# Word 格式化模块子模块
 hidden_imports += collect_submodules('mistune')
 hidden_imports += collect_submodules('docx')
 hidden_imports += collect_submodules('lxml')
 
-# 分析主入口文件
+# 加入 jaraco / pkg_resources
+hidden_imports += hidden_jaraco + hidden_pkg
+
+# -------------------------
+# Analysis
+# -------------------------
 a = Analysis(
     ['main.py'],
     pathex=[spec_dir, os.path.join(spec_dir, 'backend')],
-    binaries=[],
+    binaries=binaries_jaraco + binaries_pkg,
     datas=[
-        # 包含前端静态文件
         ('static', 'static'),
-        # 包含后端 app 目录
         ('backend/app', 'app'),
-    ],
+    ] + datas_jaraco + datas_pkg,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
@@ -86,10 +99,8 @@ a = Analysis(
     noarchive=False,
 )
 
-# 创建 PYZ 归档
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
-# 创建可执行文件
 exe = EXE(
     pyz,
     a.scripts,
@@ -104,11 +115,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,  # 设置为 True 以显示控制台窗口（可以看到日志）
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # 可以添加图标文件路径
+    icon=None,
 )
