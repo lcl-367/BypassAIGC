@@ -1,19 +1,16 @@
-name: Build Linux (Stable)
+name: Build Linux
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   PYTHON_VERSION: "3.12.2"
-  PIP_VERSION: "24.0"
-  SETUPTOOLS_VERSION: "65.5.0"
-  PYINSTALLER_VERSION: "6.3.0"
   NODE_VERSION: "20"
 
 jobs:
@@ -21,22 +18,28 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      # -------------------------
+      # Python 环境
+      # -------------------------
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install stable toolchain
+      - name: Install Python deps
         working-directory: package
         run: |
-          python -m pip install --upgrade pip==${{ env.PIP_VERSION }}
-          pip install setuptools==${{ env.SETUPTOOLS_VERSION }}
+          python -m pip install --upgrade pip
           pip install wheel
-          pip install pyinstaller==${{ env.PYINSTALLER_VERSION }}
+          pip install pyinstaller
           pip install -r requirements.txt
 
+      # -------------------------
+      # Node 环境（前端）
+      # -------------------------
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -58,19 +61,28 @@ jobs:
           rm -rf static
           cp -r frontend/dist static
 
+      # -------------------------
+      # PyInstaller 打包
+      # -------------------------
       - name: Build with PyInstaller
         working-directory: package
         run: pyinstaller app.spec --clean
 
+      # -------------------------
+      # 打包成 tar.gz
+      # -------------------------
       - name: Archive
         working-directory: package
         run: |
-          VERSION=${GITHUB_REF_NAME:-dev}
-          tar -czvf "AI学术写作助手-Linux-${VERSION}.tar.gz" -C dist AI学术写作助手
+          VERSION=${GITHUB_SHA::7}
+          tar -czvf "BypassAIGC-Linux-${VERSION}.tar.gz" -C dist BypassAIGC
 
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+      # -------------------------
+      # 上传构建产物（关键步骤）
+      # -------------------------
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: package/AI学术写作助手-Linux-*.tar.gz
-          generate_release_notes: true
+          name: BypassAIGC-Linux
+          path: package/*.tar.gz
+          retention-days: 30
