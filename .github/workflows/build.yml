@@ -1,0 +1,103 @@
+name: Build Linux Executable (Stable)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.12.2"
+  PIP_VERSION: "24.0"
+  SETUPTOOLS_VERSION: "65.5.0"
+  PYINSTALLER_VERSION: "6.3.0"
+  NODE_VERSION: "20"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -------------------------
+      # Python 固定工具链
+      # -------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install stable toolchain
+        working-directory: package
+        run: |
+          python -m pip install --upgrade pip==${{ env.PIP_VERSION }}
+          pip install setuptools==${{ env.SETUPTOOLS_VERSION }}
+          pip install wheel
+          pip install pyinstaller==${{ env.PYINSTALLER_VERSION }}
+          pip install -r requirements.txt
+
+      # -------------------------
+      # Node
+      # -------------------------
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: package/frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: package/frontend
+        run: npm run build
+
+      - name: Copy frontend build
+        working-directory: package
+        run: |
+          rm -rf static
+          cp -r frontend/dist static
+
+      # -------------------------
+      # PyInstaller 构建（关键）
+      # -------------------------
+      - name: Build with PyInstaller
+        working-directory: package
+        run: |
+          pyinstaller app.spec \
+            --clean \
+            --collect-all jaraco \
+            --collect-all pkg_resources
+
+      # -------------------------
+      # 打包压缩
+      # -------------------------
+      - name: Archive
+        working-directory: package
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          tar -czvf "BypassAIGC-Linux-${VERSION}.tar.gz" -C dist BypassAIGC
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BypassAIGC-Linux
+          path: package/BypassAIGC-Linux-*.tar.gz
+          retention-days: 30
+
+      # -------------------------
+      # Release（仅 tag 触发）
+      # -------------------------
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: package/BypassAIGC-Linux-*.tar.gz
+          generate_release_notes: true
